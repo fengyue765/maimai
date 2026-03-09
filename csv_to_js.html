@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV转JavaScript数据工具 - 大文件支持版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #4a4a4a;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .upload-area:hover {
+            background: #f0f4ff;
+            border-color: #764ba2;
+        }
+        
+        .upload-area i {
+            font-size: 48px;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        
+        .upload-area p {
+            color: #666;
+            margin: 10px 0;
+        }
+        
+        .upload-area small {
+            color: #999;
+            display: block;
+            margin-top: 10px;
+        }
+        
+        #csvFile {
+            display: none;
+        }
+        
+        .file-info {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .preview-section {
+            margin: 30px 0;
+            display: none;
+        }
+        
+        .preview-section.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .preview-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .pagination {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .page-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .page-btn:hover:not(:disabled) {
+            background: #764ba2;
+        }
+        
+        .page-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .preview-table-container {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            margin: 20px 0;
+            position: relative;
+        }
+        
+        .preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            font-size: 11px;
+            table-layout: fixed;
+        }
+        
+        .preview-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            min-width: 80px;
+        }
+        
+        .preview-table td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .preview-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .data-section {
+            margin: 30px 0;
+        }
+        
+        .data-section h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .copy-btn {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        
+        .copy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+        }
+        
+        .code-container-wrapper {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        
+        .code-container {
+            background: #282c34;
+            color: #abb2bf;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .code-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(40, 44, 52, 0.8);
+            color: #abb2bf;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid #667eea30;
+        }
+        
+        .stat-card .number {
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .label {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .instructions {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 30px 0;
+            border-left: 4px solid #667eea;
+        }
+        
+        .instructions h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+        
+        .instructions li {
+            margin: 10px 0;
+        }
+        
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+        
+        .message.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+            display: block;
+        }
+        
+        .progress-container {
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .progress-container.active {
+            display: block;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .processing {
+            text-align: center;
+            padding: 30px;
+            display: none;
+        }
+        
+        .processing.active {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .config-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dee2e6;
+        }
+        
+        .config-option {
+            margin: 15px 0;
+        }
+        
+        .config-option label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            color: #666;
+        }
+        
+        .config-option input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .config-option input[type="number"] {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            width: 100px;
+        }
+        
+        .config-group {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .preview-table {
+                font-size: 10px;
+            }
+            
+            .preview-table th,
+            .preview-table td {
+                padding: 6px;
+            }
+            
+            .code-container {
+                font-size: 11px;
+                padding: 15px;
+            }
+            
+            .btn {
+                min-width: 120px;
+            }
+            
+            .preview-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .pagination {
+                justify-content: center;
+            }
+        }
+        
+        .memory-warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .memory-warning.active {
+            display: block;
+        }
+        
+        .optimization-tip {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        
+        .batch-controls {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        
+        .batch-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .batch-btn:hover {
+            background: #5a6268;
+        }
+        
+        .memory-status {
+            font-size: 12px;
+            color: #6c757d;
+            text-align: right;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 CSV转JavaScript数据工具 - 大文件支持版</h1>
+        
+        <div class="instructions">
+            <h3>专为处理6000+行数据优化</h3>
+            <ol>
+                <li><strong>支持大文件</strong>：专门优化处理超过6000行的CSV文件</li>
+                <li><strong>分批处理</strong>：自动分批处理数据，避免浏览器崩溃</li>
+                <li><strong>内存优化</strong>：使用流式处理，减少内存占用</li>
+                <li><strong>预览优化</strong>：分页显示，快速浏览大量数据</li>
+                <li><strong>生成优化</strong>：自动压缩和优化生成的代码</li>
+            </ol>
+        </div>
+        
+        <div class="upload-area" onclick="document.getElementById('csvFile').click()">
+            <div>📁</div>
+            <p>点击或拖拽CSV文件到此处</p>
+            <p>支持大文件 - 已优化6000+行数据处理</p>
+            <small>建议文件：maimai_global_stats.csv</small>
+            
+            <div class="file-info" id="fileInfo" style="display: none;">
+                文件：<span id="fileName">-</span> | 
+                大小：<span id="fileSize">-</span> | 
+                预计行数：<span id="estimatedRows">-</span>
+            </div>
+        </div>
+        
+        <input type="file" id="csvFile" accept=".csv" onchange="handleFileSelect(event)">
+        
+        <div id="message" class="message"></div>
+        
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text">
+                <span>处理进度</span>
+                <span id="progressText">0%</span>
+            </div>
+        </div>
+        
+        <div class="processing" id="processing">
+            <div class="spinner"></div>
+            <p id="processingText">正在处理数据...</p>
+        </div>
+        
+        <div class="memory-warning" id="memoryWarning">
+            <strong>⚠️ 内存使用警告：</strong>
+            <p>检测到大量数据，已启用分批处理模式。处理过程中浏览器可能会有短暂响应延迟，请耐心等待。</p>
+        </div>
+        
+        <div class="config-panel">
+            <h3>处理配置</h3>
+            <div class="config-group">
+                <div class="config-option">
+                    <label>
+                        <input type="checkbox" id="chkOptimizeMemory" checked>
+                        启用内存优化模式（推荐）
+                    </label>
+                </div>
+                <div class="config-option">
+                    <label>
+                        <input type="checkbox" id="chkCompressOutput" checked>
+                        压缩输出代码
+                    </label>
+                </div>
+                <div class="config-option">
+                    <label>
+                        每批处理行数：
+                        <input type="number" id="batchSize" value="1000" min="100" max="5000">
+                    </label>
+                </div>
+            </div>
+            <div class="memory-status" id="memoryStatus"></div>
+        </div>
+        
+        <div class="preview-section" id="previewSection">
+            <div class="preview-controls">
+                <div>
+                    <button class="batch-btn" onclick="showFirstPage()">首页</button>
+                    <button class="batch-btn" onclick="showPreviousPage()">上一页</button>
+                    <button class="batch-btn" onclick="showNextPage()">下一页</button>
+                    <button class="batch-btn" onclick="showLastPage()">末页</button>
+                </div>
+                <div class="pagination">
+                    <span>第 <span id="currentPage">1</span> 页 / 共 <span id="totalPages">1</span> 页</span>
+                    <span>| 每页 <span id="pageSize">50</span> 行</span>
+                    <span>| 共 <span id="totalRows">0</span> 行数据</span>
+                </div>
+                <div>
+                    <select id="pageSizeSelect" onchange="changePageSize(this.value)">
+                        <option value="20">20行/页</option>
+                        <option value="50" selected>50行/页</option>
+                        <option value="100">100行/页</option>
+                        <option value="200">200行/页</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="preview-table-container">
+                <table class="preview-table" id="previewTable">
+                    <thead>
+                        <tr id="tableHeader"></tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            
+            <div class="stats" id="stats"></div>
+            
+            <div class="batch-controls">
+                <button class="btn btn-success" onclick="generateJavaScriptData()">
+                    <span id="generateBtnText">生成JavaScript数据</span>
+                </button>
+                <button class="btn btn-secondary" onclick="analyzeData()">分析数据结构</button>
+                <button class="btn" onclick="testDataGeneration()">测试生成</button>
+            </div>
+        </div>
+        
+        <div class="data-section" id="dataSection" style="display: none;">
+            <h3>
+                生成的JavaScript数据
+                <button class="copy-btn" onclick="copyToClipboard()">复制代码</button>
+            </h3>
+            
+            <div class="code-container-wrapper">
+                <div class="code-info" id="codeInfo">大小：计算中...</div>
+                <div class="code-container">
+                    <pre id="javascriptData"></pre>
+                </div>
+            </div>
+            
+            <div class="optimization-tip">
+                <strong>💡 优化提示：</strong> 生成的代码已自动优化，可直接嵌入HTML文件使用。
+                如果代码太大导致页面加载慢，可以考虑：
+                1. 拆分数据文件 2. 使用Web Worker异步加载 3. 启用服务器端分页
+            </div>
+            
+            <div class="instructions">
+                <h3>使用说明</h3>
+                <ol>
+                    <li>点击"复制代码"按钮复制整个JavaScript数组</li>
+                    <li>打开你的 maimai_song_game.html 文件</li>
+                    <li>找到 <code>const songData = [...]</code> 部分</li>
+                    <li>用复制的代码替换整个数组</li>
+                    <li>保存文件并在浏览器中测试游戏</li>
+                </ol>
+                <p><strong>重要提示：</strong> 如果歌曲数据超过10000条，建议考虑使用数据库或服务器端API。</p>
+            </div>
+            
+            <div class="center">
+                <button class="btn" onclick="downloadDataFile()">下载数据文件</button>
+                <button class="btn btn-secondary" onclick="clearData()">清除数据重新开始</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let csvData = [];                // 原始CSV数据
+        let headers = [];                // CSV表头
+        let parsedData = [];             // 解析后的数据
+        let currentPage = 1;             // 当前页码
+        let pageSize = 50;               // 每页显示行数
+        let totalPages = 1;              // 总页数
+        let songMap = new Map();         // 歌曲映射表（用于最终生成）
+        let processingBatch = 0;         // 当前处理批次
+        let totalBatches = 0;            // 总批次数
+        let isProcessing = false;        // 是否正在处理
+        let fileChunks = [];             // 文件分块
+        
+        // 显示处理进度
+        function updateProgress(percent, text) {
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const processingText = document.getElementById('processingText');
+            
+            progressFill.style.width = `${percent}%`;
+            progressText.textContent = `${Math.round(percent)}%`;
+            
+            if (text) {
+                processingText.textContent = text;
+            }
+        }
+        
+        // 显示处理状态
+        function showProcessing(show, text = '正在处理数据...') {
+            const processingDiv = document.getElementById('processing');
+            const progressContainer = document.getElementById('progressContainer');
+            
+            document.getElementById('processingText').textContent = text;
+            processingDiv.classList.toggle('active', show);
+            progressContainer.classList.toggle('active', show);
+            isProcessing = show;
+        }
+        
+        // 显示消息
+        function showMessage(message, type = 'info') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = message;
+            messageDiv.className = 'message';
+            
+            if (message && type) {
+                messageDiv.classList.add(type);
+                
+                // 如果是错误信息，显示3秒后自动消失
+                if (type === 'error' || type === 'warning') {
+                    setTimeout(() => {
+                        messageDiv.classList.remove('active');
+                    }, 5000);
+                }
+            }
+        }
+        
+        // 更新内存状态显示
+        function updateMemoryStatus() {
+            const memoryStatus = document.getElementById('memoryStatus');
+            const usedMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
+            const totalMB = Math.round(performance.memory.totalJSHeapSize / 1024 / 1024);
+            memoryStatus.textContent = `内存使用：${usedMB}MB / ${totalMB}MB`;
+        }
+        
+        // 处理文件选择
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // 验证文件类型
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                showMessage('请选择CSV文件', 'error');
+                return;
+            }
+            
+            // 显示文件信息
+            document.getElementById('fileInfo').style.display = 'block';
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = formatFileSize(file.size);
+            
+            // 估计行数（假设平均每行150字节）
+            const estimatedRows = Math.round(file.size / 150);
+            document.getElementById('estimatedRows').textContent = estimatedRows.toLocaleString();
+            
+            // 显示内存警告（如果文件较大）
+            if (estimatedRows > 5000) {
+                document.getElementById('memoryWarning').classList.add('active');
+            }
+            
+            showProcessing(true, '正在读取文件...');
+            updateProgress(0, '开始处理文件...');
+            
+            // 使用FileReader API读取文件
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                processCSVFile(e.target.result, file.size);
+            };
+            
+            reader.onerror = function() {
+                showMessage('读取文件时出错', 'error');
+                showProcessing(false);
+            };
+            
+            // 开始读取
+            reader.readAsText(file, 'UTF-8');
+        }
+        
+        // 处理CSV文件
+        function processCSVFile(text, fileSize) {
+            try {
+                // 分批处理大文件
+                const lines = text.split('\n');
+                const totalLines = lines.length;
+                
+                // 更新总行数显示
+                document.getElementById('totalRows').textContent = totalLines.toLocaleString();
+                
+                if (totalLines === 0) {
+                    throw new Error('CSV文件为空');
+                }
+                
+                // 解析表头
+                headers = parseCSVLine(lines[0]);
+                
+                // 验证必要的列
+                const requiredColumns = ['Song ID', 'Title', 'Type', 'Genre', 'Version', 'BPM', 'Difficulty', 'Official DS'];
+                const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+                
+                if (missingColumns.length > 0) {
+                    throw new Error(`缺少必要的列：${missingColumns.join(', ')}`);
+                }
+                
+                // 计算批次数
+                const batchSize = parseInt(document.getElementById('batchSize').value) || 1000;
+                totalBatches = Math.ceil((totalLines - 1) / batchSize);
+                
+                showMessage(`检测到 ${totalLines.toLocaleString()} 行数据，将分 ${totalBatches} 批处理`, 'info');
+                
+                // 分批处理数据
+                processBatch(lines, batchSize, 1);
+                
+            } catch (error) {
+                showMessage('处理CSV文件时出错：' + error.message, 'error');
+                showProcessing(false);
+            }
+        }
+        
+        // 分批处理数据
+        function processBatch(lines, batchSize, batchNumber) {
+            const totalLines = lines.length;
+            const startLine = 1 + (batchNumber - 1) * batchSize;
+            const endLine = Math.min(startLine + batchSize, totalLines);
+            
+            updateProgress(
+                ((batchNumber - 1) / totalBatches) * 100,
+                `正在处理第 ${batchNumber}/${totalBatches} 批数据...`
+            );
+            
+            // 使用setTimeout分批处理，避免阻塞主线程
+            setTimeout(() => {
+                try {
+                    // 处理当前批次的数据
+                    for (let i = startLine; i < endLine; i++) {
+                        if (lines[i].trim() === '') continue;
+                        
+                        const values = parseCSVLine(lines[i]);
+                        if (values.length === headers.length) {
+                            const row = {};
+                            headers.forEach((header, index) => {
+                                row[header] = values[index];
+                            });
+                            csvData.push(row);
+                        }
+                    }
+                    
+                    processingBatch = batchNumber;
+                    
+                    // 如果还有下一批，继续处理
+                    if (batchNumber < totalBatches) {
+                        processBatch(lines, batchSize, batchNumber + 1);
+                    } else {
+                        // 所有批次处理完成
+                        finishProcessing();
+                    }
+                    
+                } catch (error) {
+                    showMessage(`处理第 ${batchNumber} 批数据时出错：` + error.message, 'error');
+                    showProcessing(false);
+                }
+            }, 0);
+        }
+        
+        // 完成数据处理
+        function finishProcessing() {
+            updateProgress(100, '数据处理完成');
+            
+            setTimeout(() => {
+                showProcessing(false);
+                showMessage(`成功加载 ${csvData.length.toLocaleString()} 条记录`, 'success');
+                
+                // 显示预览界面
+                document.getElementById('previewSection').classList.add('active');
+                
+                // 初始化分页
+                totalPages = Math.ceil(csvData.length / pageSize);
+                document.getElementById('totalPages').textContent = totalPages;
+                document.getElementById('pageSize').textContent = pageSize;
+                
+                // 显示第一页数据
+                renderTable(1);
+                
+                // 更新内存状态
+                updateMemoryStatus();
+                
+                // 显示统计信息
+                showStats();
+                
+            }, 500);
+        }
+        
+        // 解析CSV行（处理引号和逗号）
+        function parseCSVLine(line) {
+            const values = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            values.push(current.trim());
+            return values;
+        }
+        
+        // 渲染表格
+        function renderTable(page) {
+            if (csvData.length === 0) return;
+            
+            currentPage = page;
+            const startIndex = (page - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, csvData.length);
+            
+            // 更新分页信息
+            document.getElementById('currentPage').textContent = page;
+            document.getElementById('totalPages').textContent = totalPages;
+            
+            // 渲染表头
+            const tableHeader = document.getElementById('tableHeader');
+            tableHeader.innerHTML = '';
+            
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                th.title = header;
+                tableHeader.appendChild(th);
+            });
+            
+            // 渲染表格内容
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = '';
+            
+            for (let i = startIndex; i < endIndex; i++) {
+                const row = csvData[i];
+                const tr = document.createElement('tr');
+                
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.textContent = row[header] || '';
+                    td.title = row[header] || '';
+                    tr.appendChild(td);
+                });
+                
+                tableBody.appendChild(tr);
+            }
+        }
+        
+        // 分页控制函数
+        function showFirstPage() {
+            if (currentPage > 1) {
+                renderTable(1);
+            }
+        }
+        
+        function showPreviousPage() {
+            if (currentPage > 1) {
+                renderTable(currentPage - 1);
+            }
+        }
+        
+        function showNextPage() {
+            if (currentPage < totalPages) {
+                renderTable(currentPage + 1);
+            }
+        }
+        
+        function showLastPage() {
+            if (currentPage < totalPages) {
+                renderTable(totalPages);
+            }
+        }
+        
+        function changePageSize(newSize) {
+            pageSize = parseInt(newSize);
+            document.getElementById('pageSize').textContent = pageSize;
+            totalPages = Math.ceil(csvData.length / pageSize);
+            document.getElementById('totalPages').textContent = totalPages;
+            renderTable(1);
+        }
+        
+        // 显示统计信息
+        function showStats() {
+            const stats = document.getElementById('stats');
+            
+            // 计算统计信息
+            const uniqueSongIds = new Set();
+            const genres = new Set();
+            const types = new Set();
+            const versions = new Set();
+            
+            csvData.forEach(row => {
+                const songId = row['Song ID'];
+                if (songId) uniqueSongIds.add(songId);
+                if (row['Genre']) genres.add(row['Genre']);
+                if (row['Type']) types.add(row['Type']);
+                if (row['Version']) versions.add(row['Version']);
+            });
+            
+            stats.innerHTML = `
+                <div class="stat-card">
+                    <div class="number">${csvData.length.toLocaleString()}</div>
+                    <div class="label">总记录数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">${uniqueSongIds.size.toLocaleString()}</div>
+                    <div class="label">唯一歌曲数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">${genres.size}</div>
+                    <div class="label">分区数量</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">${versions.size}</div>
+                    <div class="label">版本数量</div>
+                </div>
+            `;
+        }
+        
+        // 分析数据结构
+        function analyzeData() {
+            if (csvData.length === 0) {
+                showMessage('请先上传CSV文件', 'warning');
+                return;
+            }
+            
+            const difficulties = new Set();
+            const dsValues = [];
+            
+            csvData.forEach(row => {
+                const difficulty = row['Difficulty'] || '';
+                const ds = parseFloat(row['Official DS']);
+                
+                if (difficulty) difficulties.add(difficulty);
+                if (!isNaN(ds)) dsValues.push(ds);
+            });
+            
+            const avgDS = dsValues.length > 0 
+                ? (dsValues.reduce((a, b) => a + b, 0) / dsValues.length).toFixed(2)
+                : 0;
+            
+            const maxDS = dsValues.length > 0 ? Math.max(...dsValues).toFixed(1) : 0;
+            const minDS = dsValues.length > 0 ? Math.min(...dsValues).toFixed(1) : 0;
+            
+            showMessage(
+                `数据分析：\n` +
+                `• 难度类型：${Array.from(difficulties).join(', ')}\n` +
+                `• 定数范围：${minDS} - ${maxDS}\n` +
+                `• 平均定数：${avgDS}\n` +
+                `• DS数据点：${dsValues.length}`,
+                'info'
+            );
+        }
+        
+        // 测试数据生成
+        function testDataGeneration() {
+            if (csvData.length === 0) {
+                showMessage('请先上传CSV文件', 'warning');
+                return;
+            }
+            
+            // 只使用前100条数据进行测试
+            const testData = csvData.slice(0, 100);
+            generateSongMap(testData, true);
+            
+            showMessage(`测试生成完成，处理了 ${testData.length} 条记录，生成 ${songMap.size} 首歌曲`, 'success');
+        }
+        
+        // 生成歌曲映射表
+        function generateSongMap(data, isTest = false) {
+            songMap.clear();
+            
+            data.forEach(row => {
+                const songId = parseInt(row['Song ID']);
+                if (!songId || isNaN(songId)) return;
+                
+                if (!songMap.has(songId)) {
+                    songMap.set(songId, {
+                        id: songId,
+                        title: row['Title'] || '',
+                        type: row['Type'] || '',
+                        genre: row['Genre'] || '',
+                        version: row['Version'] || '',
+                        bpm: parseFloat(row['BPM']) || 0,
+                        expert_ds: null,
+                        master_ds: null,
+                        has_remaster: false
+                    });
+                }
+                
+                const song = songMap.get(songId);
+                const difficulty = (row['Difficulty'] || '').toLowerCase();
+                const ds = parseFloat(row['Official DS']);
+                
+                if (difficulty.includes('expert')) {
+                    song.expert_ds = ds;
+                } else if (difficulty.includes('master') && !difficulty.includes('re:master')) {
+                    song.master_ds = ds;
+                } else if (difficulty.includes('re:master')) {
+                    song.has_remaster = true;
+                    song.master_ds = ds;
+                }
+            });
+            
+            if (!isTest) {
+                showMessage(`已处理 ${data.length} 条记录，生成 ${songMap.size} 首歌曲数据`, 'info');
+            }
+        }
+        
+        // 生成JavaScript数据
+        function generateJavaScriptData() {
+            if (csvData.length === 0) {
+                showMessage('请先上传CSV文件', 'warning');
+                return;
+            }
+            
+            showProcessing(true, '正在生成JavaScript数据...');
+            updateProgress(0, '开始生成数据...');
+            
+            // 使用setTimeout避免阻塞UI
+            setTimeout(() => {
+                try {
+                    // 生成歌曲映射表
+                    generateSongMap(csvData);
+                    
+                    // 转换为数组
+                    const songArray = Array.from(songMap.values()).filter(song => 
+                        song.expert_ds !== null || song.master_ds !== null
+                    );
+                    
+                    updateProgress(50, '正在格式化数据...');
+                    
+                    // 生成JavaScript代码
+                    const compressOutput = document.getElementById('chkCompressOutput').checked;
+                    const jsCode = generateJavaScriptCode(songArray, compressOutput);
+                    
+                    updateProgress(100, '数据生成完成');
+                    
+                    // 显示数据
+                    setTimeout(() => {
+                        showProcessing(false);
+                        
+                        document.getElementById('javascriptData').textContent = jsCode;
+                        document.getElementById('dataSection').style.display = 'block';
+                        
+                        // 更新代码信息
+                        const codeSize = new Blob([jsCode]).size;
+                        const codeInfo = document.getElementById('codeInfo');
+                        codeInfo.textContent = `大小：${formatFileSize(codeSize)} | 歌曲数：${songArray.length}`;
+                        
+                        // 更新生成按钮文本
+                        document.getElementById('generateBtnText').textContent = `重新生成数据 (${songArray.length}首)`;
+                        
+                        showMessage(`已生成 ${songArray.length} 首歌曲的JavaScript数据`, 'success');
+                        
+                        // 滚动到数据部分
+                        document.getElementById('dataSection').scrollIntoView({ behavior: 'smooth' });
+                        
+                        // 更新内存状态
+                        updateMemoryStatus();
+                        
+                    }, 500);
+                    
+                } catch (error) {
+                    showProcessing(false);
+                    showMessage('生成JavaScript数据时出错：' + error.message, 'error');
+                }
+            }, 100);
+        }
+        
+        // 生成JavaScript代码
+        function generateJavaScriptCode(songArray, compress = false) {
+            let jsCode = 'const songData = [\n';
+            
+            songArray.forEach((song, index) => {
+                if (compress) {
+                    // 压缩格式：去除多余空格
+                    jsCode += `  {id:${song.id},title:"${escapeString(song.title)}",type:"${song.type}",genre:"${escapeString(song.genre)}",version:"${escapeString(song.version)}",bpm:${song.bpm},expert_ds:${song.expert_ds !== null ? song.expert_ds : 'null'},master_ds:${song.master_ds !== null ? song.master_ds : 'null'},has_remaster:${song.has_remaster}}`;
+                } else {
+                    // 美化格式
+                    jsCode += '    { ';
+                    jsCode += `id: ${song.id}, `;
+                    jsCode += `title: "${escapeString(song.title)}", `;
+                    jsCode += `type: "${song.type}", `;
+                    jsCode += `genre: "${escapeString(song.genre)}", `;
+                    jsCode += `version: "${escapeString(song.version)}", `;
+                    jsCode += `bpm: ${song.bpm}, `;
+                    jsCode += `expert_ds: ${song.expert_ds !== null ? song.expert_ds : 'null'}, `;
+                    jsCode += `master_ds: ${song.master_ds !== null ? song.master_ds : 'null'}, `;
+                    jsCode += `has_remaster: ${song.has_remaster ? 'true' : 'false'}`;
+                    jsCode += ' }';
+                }
+                
+                if (index < songArray.length - 1) {
+                    jsCode += ',';
+                }
+                jsCode += '\n';
+            });
+            
+            jsCode += '];';
+            return jsCode;
+        }
+        
+        // 转义字符串中的特殊字符
+        function escapeString(str) {
+            if (!str) return '';
+            return str.replace(/\\/g, '\\\\')
+                     .replace(/"/g, '\\"')
+                     .replace(/\n/g, '\\n')
+                     .replace(/\r/g, '\\r')
+                     .replace(/\t/g, '\\t');
+        }
+        
+        // 复制到剪贴板
+        function copyToClipboard() {
+            const code = document.getElementById('javascriptData').textContent;
+            
+            if (!code || code === 'const songData = [];') {
+                showMessage('没有可复制的数据', 'warning');
+                return;
+            }
+            
+            navigator.clipboard.writeText(code).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                const originalText = btn.textContent;
+                btn.textContent = '已复制！';
+                btn.style.background = 'linear-gradient(135deg, #28a745 0%, #218838 100%)';
+                
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)';
+                }, 2000);
+                
+                showMessage('代码已复制到剪贴板！', 'success');
+            }).catch(err => {
+                showMessage('复制失败：' + err.message, 'error');
+            });
+        }
+        
+        // 下载数据文件
+        function downloadDataFile() {
+            const code = document.getElementById('javascriptData').textContent;
+            
+            if (!code || code === 'const songData = [];') {
+                showMessage('没有可下载的数据', 'warning');
+                return;
+            }
+            
+            const blob = new Blob([code], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'maimai_song_data.js';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showMessage('数据文件已下载', 'success');
+        }
+        
+        // 清除数据
+        function clearData() {
+            csvData = [];
+            headers = [];
+            parsedData = [];
+            songMap.clear();
+            
+            document.getElementById('previewSection').classList.remove('active');
+            document.getElementById('dataSection').style.display = 'none';
+            document.getElementById('csvFile').value = '';
+            document.getElementById('fileInfo').style.display = 'none';
+            document.getElementById('memoryWarning').classList.remove('active');
+            
+            // 重置分页
+            currentPage = 1;
+            pageSize = 50;
+            totalPages = 1;
+            
+            document.getElementById('currentPage').textContent = '1';
+            document.getElementById('totalPages').textContent = '1';
+            document.getElementById('totalRows').textContent = '0';
+            document.getElementById('pageSize').textContent = '50';
+            
+            // 清空表格
+            document.getElementById('tableHeader').innerHTML = '';
+            document.getElementById('tableBody').innerHTML = '';
+            document.getElementById('stats').innerHTML = '';
+            document.getElementById('javascriptData').textContent = '';
+            document.getElementById('generateBtnText').textContent = '生成JavaScript数据';
+            
+            // 重置文件选择
+            document.getElementById('csvFile').value = '';
+            
+            showMessage('数据已清除，可以重新开始', 'info');
+        }
+        
+        // 工具函数：格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 添加拖放支持
+            const uploadArea = document.querySelector('.upload-area');
+            
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.style.background = '#f0f4ff';
+                uploadArea.style.borderColor = '#764ba2';
+            });
+            
+            uploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                uploadArea.style.background = '';
+                uploadArea.style.borderColor = '';
+            });
+            
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.style.background = '';
+                uploadArea.style.borderColor = '';
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    const file = files[0];
+                    if (file.name.toLowerCase().endsWith('.csv')) {
+                        // 模拟文件选择
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(file);
+                        document.getElementById('csvFile').files = dataTransfer.files;
+                        
+                        // 触发change事件
+                        const event = new Event('change', { bubbles: true });
+                        document.getElementById('csvFile').dispatchEvent(event);
+                    } else {
+                        showMessage('请拖放CSV文件', 'error');
+                    }
+                }
+            });
+            
+            // 定期更新内存状态
+            setInterval(updateMemoryStatus, 5000);
+        });
+    </script>
+</body>
+</html>
