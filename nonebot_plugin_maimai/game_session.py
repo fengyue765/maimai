@@ -10,6 +10,9 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 import pandas as pd
+from PIL import Image, ImageDraw
+
+from . import image_utils
 
 
 # ---------------------------------------------------------------------------
@@ -296,10 +299,13 @@ class GuessSession:
             gi = self.song_info_map[g["id"]]
             tc = self._cmp(gi.song_type, target.song_type)
             gc = self._cmp(gi.genre, target.genre)
-            vc = self._cmp(gi.version, target.version)
+            if gi.version == target.version:
+                vc = "√"
+            else:
+                vc = "↑" if g["id"] < target.song_id else "↓"
             bc = self._cmp(gi.bpm, target.bpm, "bpm")
-            ec = self._cmp(gi.expert_ds, target.expert_ds)
-            mc = self._cmp(gi.master_ds, target.master_ds)
+            ec = self._cmp(gi.expert_ds, target.expert_ds, "ds")
+            mc = self._cmp(gi.master_ds, target.master_ds, "ds")
             rc = self._cmp(gi.has_remaster, target.has_remaster, "boolean")
 
             def _fmt(v, sym, kind="cat") -> str:
@@ -331,6 +337,90 @@ class GuessSession:
             lines.append(f"\n❌ 猜错了！已用错误次数：{self.total_errors}/{self.max_errors}（剩余 {remaining}）")
 
         return is_correct, "\n".join(lines)
+
+    def draw_guess_result(self) -> bytes:
+        """
+        将当前局的猜测历史绘制成图片。
+
+        Returns:
+            PNG 图片的字节串
+        """
+        target = self.current_target
+        headers = ["曲名", "分类", "分区", "版本", "BPM", "Expert", "Master", "Re:M"]
+
+        font_size = 16
+        padding = 8
+
+        font = image_utils.get_font(font_size)
+
+        rows: List[List[str]] = []
+        for g in self.round_guesses:
+            gi = self.song_info_map[g["id"]]
+            tc = self._cmp(gi.song_type, target.song_type)
+            gc = self._cmp(gi.genre, target.genre)
+            if gi.version == target.version:
+                vc = "√"
+            else:
+                vc = "↑" if g["id"] < target.song_id else "↓"
+            bc = self._cmp(gi.bpm, target.bpm, "bpm")
+            ec = self._cmp(gi.expert_ds, target.expert_ds, "ds")
+            mc = self._cmp(gi.master_ds, target.master_ds, "ds")
+            rc = self._cmp(gi.has_remaster, target.has_remaster, "boolean")
+
+            title_max_w = image_utils.text_width("曲名" * 8, font)
+            t_s = image_utils.truncate_text(gi.title, font, title_max_w)
+            bpm_s = f"{gi.bpm:.0f}({bc})"
+            expert_s = f"{gi.expert_ds:.1f}({ec})" if gi.expert_ds is not None else f"N/A({ec})"
+            master_s = f"{gi.master_ds:.1f}({mc})" if gi.master_ds is not None else f"N/A({mc})"
+            rem_s = f"{'有' if gi.has_remaster else '无'}({rc})"
+            rows.append([
+                t_s,
+                f"{gi.song_type}({tc})",
+                f"{gi.genre}({gc})",
+                f"{gi.version}({vc})",
+                bpm_s,
+                expert_s,
+                master_s,
+                rem_s,
+            ])
+
+        row_height = font_size + padding * 2
+        title_height = row_height + padding
+        table_height = row_height * (len(rows) + 1)  # header + rows
+
+        # 计算列宽
+        col_widths = []
+        for i, h in enumerate(headers):
+            max_w = image_utils.text_width(h, font)
+            for row in rows:
+                cell = str(row[i]) if i < len(row) else ""
+                max_w = max(max_w, image_utils.text_width(cell, font))
+            col_widths.append(max_w + padding * 2)
+
+        img_width = sum(col_widths) + padding * 2
+        img_height = title_height + table_height + padding * 2
+
+        image = Image.new("RGB", (img_width, img_height), (250, 250, 255))
+        draw = ImageDraw.Draw(image)
+
+        title_font = image_utils.get_font(font_size)
+        round_num = self.current_round + 1
+        guess_num = len(self.round_guesses)
+        title_text = f"第 {round_num} 局  第 {guess_num} 次猜测"
+        draw.text((padding, padding), title_text, font=title_font, fill=(40, 40, 100))
+
+        image_utils.draw_table(
+            draw=draw,
+            headers=headers,
+            rows=rows,
+            start_x=padding,
+            start_y=title_height,
+            col_widths=col_widths,
+            font_size=font_size,
+            padding=padding,
+        )
+
+        return image_utils.image_to_bytes(image)
 
     def give_up_round(self) -> str:
         """放弃当前局，返回答案信息文本。"""

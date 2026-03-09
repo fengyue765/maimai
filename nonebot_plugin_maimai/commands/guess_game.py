@@ -12,6 +12,7 @@ from typing import Optional
 
 from nonebot import get_plugin_config, on_command, on_message
 from nonebot.adapters import Bot, Event, Message
+from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.rule import Rule
@@ -149,11 +150,21 @@ async def handle_guess_input(bot: Bot, event: Event, matcher: Matcher) -> None:
 
     is_correct, result_text = await asyncio.get_event_loop().run_in_executor(None, _process)
 
+    def _draw():
+        return session.draw_guess_result()
+
+    result_msg: "MessageSegment | str"
+    try:
+        img_bytes = await asyncio.get_event_loop().run_in_executor(None, _draw)
+        result_msg = MessageSegment.image(img_bytes)
+    except Exception:
+        result_msg = result_text
+
     if session.finished:
         remove_session(session_key)
-        await matcher.finish(result_text + "\n\n" + session.summary())
+        await matcher.finish(result_msg + "\n\n" + session.summary())
     elif is_correct:
         # 进入下一局
-        await matcher.finish(result_text + "\n\n" + session.next_round_prompt())
+        await matcher.finish(result_msg + "\n\n" + session.next_round_prompt())
     else:
-        await matcher.finish(result_text)
+        await matcher.finish(result_msg)

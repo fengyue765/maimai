@@ -12,6 +12,9 @@ import sys
 from typing import List, Optional
 
 import pandas as pd
+from PIL import Image, ImageDraw
+
+from . import image_utils
 
 
 # ---------------------------------------------------------------------------
@@ -358,3 +361,116 @@ def get_cross_tier_songs(range_a_str: str, range_b_str: str, csv_path: str) -> s
         lines.append(f"[{r['id']}] {title}  {r['a']} / {r['b']}")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 单曲信息图片生成
+# ---------------------------------------------------------------------------
+
+def get_song_detail_image(song_id: str, csv_path: str) -> bytes:
+    """返回单曲详情的图片字节（PNG）。"""
+    df = pd.read_csv(csv_path, encoding="utf-8", dtype={"Song ID": str})
+    df.columns = [c.strip() for c in df.columns]
+
+    song_rows = df[df["Song ID"] == str(song_id)]
+    if song_rows.empty:
+        # 返回错误提示图片
+        img = Image.new("RGB", (400, 80), (255, 230, 230))
+        draw = ImageDraw.Draw(img)
+        font = image_utils.get_font(18)
+        draw.text((16, 24), f"未找到 ID: {song_id}", font=font, fill=(180, 0, 0))
+        return image_utils.image_to_bytes(img)
+
+    base = song_rows.iloc[0]
+    title = str(base["Title"])
+    artist = str(base.get("Artist", "?"))
+    bpm = str(base.get("BPM", "?"))
+    genre = str(base.get("Genre", "?"))
+    version = str(base.get("Version", "?"))
+    song_type = str(base.get("Type", "?"))
+    aliases = str(base.get("Aliases", ""))
+    if aliases == "nan":
+        aliases = "无"
+
+    # 难度表格
+    diff_order = {"Basic": 0, "Advanced": 1, "Expert": 2, "Master": 3, "Re:MASTER": 4, "Utage": 5}
+    diff_headers = ["难度", "等级", "定数", "拟合", "物量", "属性"]
+    diff_rows: List[List[str]] = []
+    for _, row in sorted(song_rows.iterrows(), key=lambda x: diff_order.get(x[1].get("Difficulty", ""), 9)):
+        diff = str(row.get("Difficulty", "-"))
+        level = str(row.get("Level Label", "-"))
+        ds = str(row.get("Official DS", "-"))
+        fit_raw = row.get("Chart_fit_diff", "")
+        try:
+            fit_str = f"{float(fit_raw):.2f}" if pd.notna(fit_raw) and str(fit_raw).strip() else "-"
+        except (ValueError, TypeError):
+            fit_str = "-"
+        notes = str(row.get("Total Notes", "-"))
+        note_type = str(row.get("Ana_NoteType", "-"))
+        if note_type == "综合":
+            note_type = "-"
+        diff_rows.append([diff, level, ds, fit_str, notes, note_type])
+
+    # 估算图片尺寸
+    font_size = 16
+    padding = 8
+    line_h = font_size + padding * 2
+
+    font = image_utils.get_font(font_size)
+
+    # 将别名截断到合理宽度（最多 400px）
+    aliases = image_utils.truncate_text(aliases, font, 400)
+
+    info_lines = [
+        f"  {title}  (ID: {song_id})",
+        f"艺术家: {artist}    BPM: {bpm}",
+        f"分类: {genre}    版本: {version}",
+        f"类型: {song_type}",
+        f"别名: {aliases}",
+    ]
+
+    # 计算信息区宽度
+    info_area_width = max(image_utils.text_width(line, font) for line in info_lines) + padding * 4
+
+    # 计算表格列宽
+    col_widths = []
+    for i, h in enumerate(diff_headers):
+        max_w = image_utils.text_width(h, font)
+        for dr in diff_rows:
+            cell = str(dr[i]) if i < len(dr) else ""
+            max_w = max(max_w, image_utils.text_width(cell, font))
+        col_widths.append(max_w + padding * 2)
+
+    table_width = sum(col_widths)
+    img_width = max(info_area_width, table_width + padding * 2)
+    info_area_height = len(info_lines) * line_h + padding * 2
+    table_height = line_h * (len(diff_rows) + 1) + padding * 2
+    img_height = info_area_height + table_height + padding
+
+    image = Image.new("RGB", (img_width, img_height), (250, 250, 255))
+    draw = ImageDraw.Draw(image)
+
+    # 绘制信息区背景
+    draw.rectangle([0, 0, img_width, info_area_height], fill=(230, 235, 255))
+
+    title_font = image_utils.get_font(font_size + 2)
+    y = padding
+    draw.text((padding * 2, y), info_lines[0], font=title_font, fill=(30, 30, 120))
+    y += line_h
+    for line in info_lines[1:]:
+        draw.text((padding * 2, y), line, font=font, fill=(50, 50, 80))
+        y += line_h
+
+    # 绘制难度表格
+    image_utils.draw_table(
+        draw=draw,
+        headers=diff_headers,
+        rows=diff_rows,
+        start_x=padding,
+        start_y=info_area_height + padding,
+        col_widths=col_widths,
+        font_size=font_size,
+        padding=padding,
+    )
+
+    return image_utils.image_to_bytes(image)
