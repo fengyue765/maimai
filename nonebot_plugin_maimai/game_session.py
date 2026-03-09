@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import io
 import random
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -108,6 +109,8 @@ def get_modes_text() -> str:
 # 歌曲信息
 # ---------------------------------------------------------------------------
 
+_TABLE_TITLE_MAX_LEN = 14  # max characters before truncating song title in tables
+
 @dataclass
 class SongInfo:
     song_id: int
@@ -207,6 +210,10 @@ class GuessSession:
     round_guesses: List[dict] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
     finished: bool = False
+    # Snapshot for image generation (preserved across round resets)
+    _last_round_snapshot: List[dict] = field(default_factory=list)
+    _last_target_id: Optional[int] = None
+    _last_result_footer: str = ""
 
     # --- helpers ---
 
@@ -298,8 +305,8 @@ class GuessSession:
             gc = self._cmp(gi.genre, target.genre)
             vc = self._cmp(gi.version, target.version)
             bc = self._cmp(gi.bpm, target.bpm, "bpm")
-            ec = self._cmp(gi.expert_ds, target.expert_ds)
-            mc = self._cmp(gi.master_ds, target.master_ds)
+            ec = self._cmp(gi.expert_ds, target.expert_ds, "ds")
+            mc = self._cmp(gi.master_ds, target.master_ds, "ds")
             rc = self._cmp(gi.has_remaster, target.has_remaster, "boolean")
 
             def _fmt(v, sym, kind="cat") -> str:
@@ -311,7 +318,11 @@ class GuessSession:
                     return f"{'有' if v else '无'}({sym})"
                 return f"{v}({sym})"
 
-            t_s = gi.title[:12] + "…" if len(gi.title) > 12 else gi.title
+            t_s = (
+                gi.title[:_TABLE_TITLE_MAX_LEN] + "…"
+                if len(gi.title) > _TABLE_TITLE_MAX_LEN
+                else gi.title
+            )
             lines.append(
                 f"{t_s:<13} | {_fmt(gi.song_type, tc):<8} | {_fmt(gi.genre, gc):<8} | "
                 f"{_fmt(gi.version, vc):<6} | {_fmt(gi.bpm, bc):<6} | "
@@ -320,17 +331,191 @@ class GuessSession:
             )
 
         if is_correct:
-            self.round_guesses = []
-            self.current_round += 1
-            lines.append(f"\n✅ 猜对了！答案：{target.title} (ID: {target.song_id})")
-            if self.current_round >= self.rounds_total:
-                self.finished = True
+            footer_msg = f"✅ 猜对了！答案：{target.title} (ID: {target.song_id})"
         else:
             self.total_errors += 1
             remaining = self.max_errors - self.total_errors
-            lines.append(f"\n❌ 猜错了！已用错误次数：{self.total_errors}/{self.max_errors}（剩余 {remaining}）")
+            footer_msg = (
+                f"❌ 猜错了！已用错误次数：{self.total_errors}/{self.max_errors}"
+                f"（剩余 {remaining}）"
+            )
+
+        # Save snapshot (before clearing round_guesses) for image generation
+        self._last_round_snapshot = list(self.round_guesses)
+        self._last_target_id = target.song_id
+        self._last_result_footer = footer_msg
+
+        if is_correct:
+            self.round_guesses = []
+            self.current_round += 1
+            lines.append(f"\n{footer_msg}")
+            if self.current_round >= self.rounds_total:
+                self.finished = True
+        else:
+            lines.append(f"\n{footer_msg}")
 
         return is_correct, "\n".join(lines)
+
+    def draw_round_image(self) -> bytes:
+        """将本局猜测历史渲染为 PNG 图片并返回字节。"""
+        from PIL import Image, ImageDraw, ImageFont
+
+        guesses = self._last_round_snapshot
+        target = (
+            self.song_info_map[self._last_target_id]
+            if self._last_target_id is not None
+            else None
+        )
+        footer = self._last_result_footer
+
+        # ── 字体 ──────────────────────────────────────────────────────────
+        font_candidates = [
+            "msyh.ttc",
+            "simhei.ttf",
+            "AppleGothic.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        font_normal = None
+        font_bold = None
+        for fp in font_candidates:
+            try:
+                font_normal = ImageFont.truetype(fp, 16)
+                font_bold = ImageFont.truetype(fp, 17)
+                break
+            except (IOError, OSError):
+                continue
+        if font_normal is None:
+            font_normal = ImageFont.load_default()
+            font_bold = font_normal
+
+        # ── 颜色 ─────────────────────────────────────────────────────────
+        COLOR_BG = (255, 255, 255)
+        COLOR_HEADER_BG = (52, 73, 94)
+        COLOR_HEADER_FG = (255, 255, 255)
+        COLOR_ROW_ALT = (245, 245, 250)
+        COLOR_BORDER = (200, 200, 210)
+        COLOR_TEXT = (30, 30, 30)
+        SYM_COLORS = {
+            "√": (40, 167, 69),    # green
+            "×": (220, 53, 69),    # red
+            "↑": (253, 126, 20),   # orange
+            "↓": (0, 123, 255),    # blue
+            "○": (111, 66, 193),   # purple
+            "?": (108, 117, 125),  # gray
+        }
+
+        # ── 列定义 ────────────────────────────────────────────────────────
+        COL_HEADERS = ["曲名", "分类", "分区", "版本", "BPM", "Expert", "Master", "Re:M"]
+        COL_WIDTHS = [200, 90, 110, 110, 80, 90, 90, 70]
+
+        PAD = 12
+        ROW_H = 32
+        HEADER_H = 36
+        FOOTER_H = 36
+
+        total_cols_width = sum(COL_WIDTHS)
+        img_width = total_cols_width + 2 * PAD
+        n_rows = len(guesses)
+        img_height = PAD + HEADER_H + n_rows * ROW_H + FOOTER_H + PAD
+
+        img = Image.new("RGB", (img_width, img_height), COLOR_BG)
+        draw = ImageDraw.Draw(img)
+
+        def _draw_cell(x: int, y: int, w: int, h: int, text: str,
+                       fg=COLOR_TEXT, bg=None, bold=False):
+            if bg:
+                draw.rectangle([x, y, x + w - 1, y + h - 1], fill=bg)
+            fnt = font_bold if bold else font_normal
+            # Center text horizontally and vertically
+            try:
+                bbox = fnt.getbbox(text)
+                tw = bbox[2] - bbox[0]
+                th = bbox[3] - bbox[1]
+            except AttributeError:
+                tw, th = fnt.getsize(text)  # type: ignore[attr-defined]
+            tx = x + (w - tw) // 2
+            ty = y + (h - th) // 2
+            draw.text((tx, ty), text, font=fnt, fill=fg)
+
+        # ── Header row ───────────────────────────────────────────────────
+        cx = PAD
+        cy = PAD
+        for i, (hdr, cw) in enumerate(zip(COL_HEADERS, COL_WIDTHS)):
+            _draw_cell(cx, cy, cw, HEADER_H, hdr,
+                       fg=COLOR_HEADER_FG, bg=COLOR_HEADER_BG, bold=True)
+            cx += cw
+
+        # ── Data rows ────────────────────────────────────────────────────
+        for row_idx, g in enumerate(guesses):
+            gi = self.song_info_map[g["id"]]
+            row_bg = COLOR_ROW_ALT if row_idx % 2 == 1 else COLOR_BG
+
+            if target is not None:
+                tc = self._cmp(gi.song_type, target.song_type)
+                gc = self._cmp(gi.genre, target.genre)
+                vc = self._cmp(gi.version, target.version)
+                bc = self._cmp(gi.bpm, target.bpm, "bpm")
+                ec = self._cmp(gi.expert_ds, target.expert_ds, "ds")
+                mc = self._cmp(gi.master_ds, target.master_ds, "ds")
+                rc = self._cmp(gi.has_remaster, target.has_remaster, "boolean")
+            else:
+                tc = gc = vc = bc = ec = mc = rc = "?"
+
+            def _fmt_val(v, sym, kind="cat") -> str:
+                if v is None:
+                    return f"N/A({sym})"
+                if kind == "ds":
+                    return f"{v:.1f}({sym})"
+                if kind == "bool":
+                    return f"{'有' if v else '无'}({sym})"
+                return f"{v}({sym})"
+
+            t_s = (
+                gi.title[:_TABLE_TITLE_MAX_LEN] + "…"
+                if len(gi.title) > _TABLE_TITLE_MAX_LEN
+                else gi.title
+            )
+            cells = [
+                (t_s, tc),
+                (_fmt_val(gi.song_type, tc), tc),
+                (_fmt_val(gi.genre, gc), gc),
+                (_fmt_val(gi.version, vc), vc),
+                (_fmt_val(gi.bpm, bc), bc),
+                (_fmt_val(gi.expert_ds, ec, "ds"), ec),
+                (_fmt_val(gi.master_ds, mc, "ds"), mc),
+                (_fmt_val(gi.has_remaster, rc, "bool"), rc),
+            ]
+
+            cx = PAD
+            cy2 = PAD + HEADER_H + row_idx * ROW_H
+            for (cell_text, sym), cw in zip(cells, COL_WIDTHS):
+                fg_color = SYM_COLORS.get(sym, COLOR_TEXT)
+                _draw_cell(cx, cy2, cw, ROW_H, cell_text, fg=fg_color, bg=row_bg)
+                cx += cw
+
+        # ── Grid lines ───────────────────────────────────────────────────
+        grid_top = PAD
+        grid_bottom = PAD + HEADER_H + n_rows * ROW_H
+        cx = PAD
+        for cw in COL_WIDTHS:
+            draw.line([(cx, grid_top), (cx, grid_bottom)], fill=COLOR_BORDER, width=1)
+            cx += cw
+        draw.line([(cx, grid_top), (cx, grid_bottom)], fill=COLOR_BORDER, width=1)
+
+        for r in range(n_rows + 1):
+            gy = PAD + HEADER_H + r * ROW_H
+            draw.line([(PAD, gy), (PAD + total_cols_width, gy)], fill=COLOR_BORDER, width=1)
+
+        # ── Footer ───────────────────────────────────────────────────────
+        if footer:
+            fy = PAD + HEADER_H + n_rows * ROW_H + (FOOTER_H - 20) // 2
+            draw.text((PAD, fy), footer, font=font_bold, fill=COLOR_TEXT)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
 
     def give_up_round(self) -> str:
         """放弃当前局，返回答案信息文本。"""
