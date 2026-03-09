@@ -407,6 +407,15 @@ def get_song_detail_image(song_id: str, csv_path: str) -> bytes:
     return buf.getvalue()
 
 
+def get_song_rows(song_id: str, csv_path: str) -> List[dict]:
+    """返回指定 song_id 的全部行（原始字段字典列表），供封面绘图等用途。"""
+    rows = _load_csv_rows(csv_path)
+    return [
+        row for row in rows
+        if str(row.get("Song ID", "")).strip() == str(song_id).strip()
+    ]
+
+
 def get_id_to_title(csv_path: str) -> dict[str, str]:
     """返回 song_id -> title 映射。"""
     df = pd.read_csv(csv_path, encoding="utf-8", dtype={"Song ID": str})

@@ -9,7 +9,8 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from ..config import Config
-from ..data_source import get_id_to_title, get_song_detail_image, search_songs
+from ..data_source import get_id_to_title, get_song_rows, search_songs
+from ..draw import draw_song_card
 
 song_query_cmd = on_command(
     "查歌",
@@ -35,7 +36,9 @@ async def handle_song_query(
             "  /查歌 鸟折磨"
         )
 
-    csv_path = get_plugin_config(Config).maimai_data_path
+    cfg = get_plugin_config(Config)
+    csv_path = cfg.maimai_data_path
+    cover_dir = cfg.maimai_cover_dir
 
     def _query() -> tuple[list[str], dict[str, str]]:
         try:
@@ -56,10 +59,11 @@ async def handle_song_query(
         await matcher.finish(f"❌ 未找到与「{query}」相关的歌曲。")
 
     if len(result_ids) == 1:
-        # 直接显示详情（图片）
+        # 直接显示详情（图片，含封面）
         def _detail() -> bytes:
             try:
-                return get_song_detail_image(result_ids[0], csv_path)
+                rows = get_song_rows(result_ids[0], csv_path)
+                return draw_song_card(rows, cover_dir)
             except Exception as exc:
                 raise RuntimeError(f"获取详情失败：{exc}") from exc
 
