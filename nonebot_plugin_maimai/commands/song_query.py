@@ -4,11 +4,12 @@ import asyncio
 
 from nonebot import get_plugin_config, on_command
 from nonebot.adapters import Bot, Event, Message
+from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from ..config import Config
-from ..data_source import get_id_to_title, get_song_detail, search_songs
+from ..data_source import get_id_to_title, get_song_detail_image, search_songs
 
 song_query_cmd = on_command(
     "查歌",
@@ -55,15 +56,18 @@ async def handle_song_query(
         await matcher.finish(f"❌ 未找到与「{query}」相关的歌曲。")
 
     if len(result_ids) == 1:
-        # 直接显示详情
-        def _detail() -> str:
+        # 直接显示详情（图片）
+        def _detail() -> bytes:
             try:
-                return get_song_detail(result_ids[0], csv_path)
+                return get_song_detail_image(result_ids[0], csv_path)
             except Exception as exc:
-                return f"❌ 获取详情失败：{exc}"
+                raise RuntimeError(f"获取详情失败：{exc}") from exc
 
-        detail = await asyncio.get_event_loop().run_in_executor(None, _detail)
-        await matcher.finish(detail)
+        try:
+            img_bytes = await asyncio.get_event_loop().run_in_executor(None, _detail)
+            await matcher.finish(MessageSegment.image(img_bytes))
+        except Exception as exc:
+            await matcher.finish(f"❌ {exc}")
     else:
         # 多个结果，显示列表
         result_ids = list(set(result_ids))[:15]
