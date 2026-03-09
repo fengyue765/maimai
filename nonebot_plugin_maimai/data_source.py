@@ -280,6 +280,133 @@ def get_song_detail(song_id: str, csv_path: str) -> str:
     return "\n".join(lines)
 
 
+def get_song_detail_image(song_id: str, csv_path: str) -> bytes:
+    """返回单曲详情的图片（PNG 字节）。"""
+    from .image_utils import (
+        BG_COLOR, BORDER_COLOR, TITLE_COLOR, TEXT_COLOR,
+        draw_table, get_font, PAD, ROW_H, _text_size,
+    )
+    from PIL import Image, ImageDraw
+
+    df = pd.read_csv(csv_path, encoding="utf-8", dtype={"Song ID": str})
+    df.columns = [c.strip() for c in df.columns]
+
+    song_rows = df[df["Song ID"] == str(song_id)]
+    if song_rows.empty:
+        # 返回错误文字图片
+        font = get_font(16)
+        msg = f"未找到 ID: {song_id}"
+        probe = Image.new("RGB", (1, 1))
+        probe_draw = ImageDraw.Draw(probe)
+        tw, th = _text_size(probe_draw, msg, font)
+        img = Image.new("RGB", (tw + PAD * 4, th + PAD * 4), BG_COLOR)
+        draw = ImageDraw.Draw(img)
+        draw.text((PAD * 2, PAD * 2), msg, font=font, fill=(200, 0, 0))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    base = song_rows.iloc[0]
+    title = str(base["Title"])
+    artist = str(base.get("Artist", "?"))
+    bpm = str(base.get("BPM", "?"))
+    genre = str(base.get("Genre", "?"))
+    version = str(base.get("Version", "?"))
+    song_type = str(base.get("Type", "?"))
+    aliases = str(base.get("Aliases", ""))
+    if aliases == "nan":
+        aliases = "无"
+    if len(aliases) > 80:
+        aliases = aliases[:80] + "…"
+
+    info_lines = [
+        f"🎵 {title}  (ID: {song_id})",
+        f"艺术家：{artist}　BPM：{bpm}",
+        f"分区：{genre}　版本：{version}　类型：{song_type}",
+        f"别名：{aliases}",
+    ]
+
+    order = {"Basic": 0, "Advanced": 1, "Expert": 2, "Master": 3, "Re:MASTER": 4, "Utage": 5}
+    diff_headers = ["难度", "等级", "定数", "拟合", "物量", "属性"]
+    diff_rows = []
+    for _, row in sorted(
+        song_rows.iterrows(), key=lambda x: order.get(x[1].get("Difficulty", ""), 9)
+    ):
+        diff = str(row.get("Difficulty", "-"))
+        level = str(row.get("Level Label", "-"))
+        ds = str(row.get("Official DS", "-"))
+        fit = row.get("Chart_fit_diff", "")
+        try:
+            fit_str = f"{float(fit):.2f}" if pd.notna(fit) and str(fit).strip() else "-"
+        except (ValueError, TypeError):
+            fit_str = "-"
+        notes = str(row.get("Total Notes", "-"))
+        note_type = str(row.get("Ana_NoteType", "-"))
+        if note_type == "综合":
+            note_type = "-"
+        diff_rows.append([diff, level, ds, fit_str, notes, note_type])
+
+    # 难度行颜色
+    DIFF_COLORS = {
+        "Basic": (200, 240, 200),
+        "Advanced": (255, 240, 180),
+        "Expert": (255, 200, 200),
+        "Master": (220, 200, 255),
+        "Re:MASTER": (240, 210, 255),
+        "Utage": (200, 230, 255),
+    }
+    row_colors = [DIFF_COLORS.get(r[0]) for r in diff_rows]
+
+    # 先绘制难度表
+    table_bytes = draw_table(
+        diff_headers, diff_rows, row_colors=row_colors, font_size=14
+    )
+
+    # 测量信息文字所需高度
+    font = get_font(15)
+    title_font = get_font(17)
+    probe = Image.new("RGB", (1, 1))
+    probe_draw = ImageDraw.Draw(probe)
+
+    line_heights = []
+    for i, line in enumerate(info_lines):
+        f = title_font if i == 0 else font
+        _, h = _text_size(probe_draw, line, f)
+        line_heights.append(h + 4)
+
+    info_h = sum(line_heights) + PAD * 3
+
+    # 加载难度表图片
+    table_img = Image.open(io.BytesIO(table_bytes))
+    tw, th = table_img.size
+
+    total_w = max(tw, 600) + PAD * 2
+    total_h = info_h + th + PAD * 2
+
+    img = Image.new("RGB", (total_w, total_h), BG_COLOR)
+    draw = ImageDraw.Draw(img)
+
+    # 绘制信息文字
+    y = PAD
+    for i, line in enumerate(info_lines):
+        f = title_font if i == 0 else font
+        color = TITLE_COLOR if i == 0 else TEXT_COLOR
+        draw.text((PAD, y), line, font=f, fill=color)
+        y += line_heights[i]
+
+    # 绘制分隔线
+    y += PAD // 2
+    draw.line([(PAD, y), (total_w - PAD, y)], fill=BORDER_COLOR, width=1)
+    y += PAD
+
+    # 粘贴难度表
+    img.paste(table_img, (PAD, y))
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def get_id_to_title(csv_path: str) -> dict[str, str]:
     """返回 song_id -> title 映射。"""
     df = pd.read_csv(csv_path, encoding="utf-8", dtype={"Song ID": str})

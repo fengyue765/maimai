@@ -207,6 +207,7 @@ class GuessSession:
     round_guesses: List[dict] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
     finished: bool = False
+    _last_guess_image: Optional[bytes] = field(default=None, repr=False)
 
     # --- helpers ---
 
@@ -296,10 +297,14 @@ class GuessSession:
             gi = self.song_info_map[g["id"]]
             tc = self._cmp(gi.song_type, target.song_type)
             gc = self._cmp(gi.genre, target.genre)
-            vc = self._cmp(gi.version, target.version)
+            # 版本：相同返回"√"，不同则按 song_id 大小给方向
+            if gi.version == target.version:
+                vc = "√"
+            else:
+                vc = "↑" if g["id"] < target.song_id else "↓"
             bc = self._cmp(gi.bpm, target.bpm, "bpm")
-            ec = self._cmp(gi.expert_ds, target.expert_ds)
-            mc = self._cmp(gi.master_ds, target.master_ds)
+            ec = self._cmp(gi.expert_ds, target.expert_ds, "ds")
+            mc = self._cmp(gi.master_ds, target.master_ds, "ds")
             rc = self._cmp(gi.has_remaster, target.has_remaster, "boolean")
 
             def _fmt(v, sym, kind="cat") -> str:
@@ -320,6 +325,8 @@ class GuessSession:
             )
 
         if is_correct:
+            # 在清除猜测历史前生成图片
+            self._last_guess_image = self._render_guess_image()
             self.round_guesses = []
             self.current_round += 1
             lines.append(f"\n✅ 猜对了！答案：{target.title} (ID: {target.song_id})")
@@ -329,8 +336,78 @@ class GuessSession:
             self.total_errors += 1
             remaining = self.max_errors - self.total_errors
             lines.append(f"\n❌ 猜错了！已用错误次数：{self.total_errors}/{self.max_errors}（剩余 {remaining}）")
+            self._last_guess_image = self._render_guess_image()
 
         return is_correct, "\n".join(lines)
+
+    def _render_guess_image(self) -> bytes:
+        """内部方法：将当前 round_guesses 渲染为图片字节。"""
+        from .image_utils import draw_table, CORRECT_BG
+
+        target = self.current_target
+        headers = ["曲名", "分类", "分区", "版本", "BPM", "Expert", "Master", "Re:M"]
+        rows: List[List[str]] = []
+        row_colors = []
+
+        for g in self.round_guesses:
+            gi = self.song_info_map[g["id"]]
+            tc = self._cmp(gi.song_type, target.song_type)
+            gc = self._cmp(gi.genre, target.genre)
+            if gi.version == target.version:
+                vc = "√"
+            else:
+                vc = "↑" if g["id"] < target.song_id else "↓"
+            bc = self._cmp(gi.bpm, target.bpm, "bpm")
+            ec = self._cmp(gi.expert_ds, target.expert_ds, "ds")
+            mc = self._cmp(gi.master_ds, target.master_ds, "ds")
+            rc = self._cmp(gi.has_remaster, target.has_remaster, "boolean")
+
+            def _fmt(v, sym, kind="cat") -> str:
+                if v is None:
+                    return f"N/A({sym})"
+                if kind == "ds":
+                    return f"{v:.1f}({sym})"
+                if kind == "bool":
+                    return f"{'有' if v else '无'}({sym})"
+                return f"{v}({sym})"
+
+            t_s = gi.title[:12] + "…" if len(gi.title) > 12 else gi.title
+            rows.append([
+                t_s,
+                _fmt(gi.song_type, tc),
+                _fmt(gi.genre, gc),
+                _fmt(gi.version, vc),
+                _fmt(gi.bpm, bc),
+                _fmt(gi.expert_ds, ec, "ds"),
+                _fmt(gi.master_ds, mc, "ds"),
+                _fmt(gi.has_remaster, rc, "bool"),
+            ])
+            row_colors.append(CORRECT_BG if g["is_correct"] else None)
+
+        # title reflects state at time of call
+        guess_num = len(self.round_guesses)
+        round_num = self.current_round + 1
+        title = (
+            f"第 {round_num} 局  第 {guess_num} 次猜测"
+            f"  错误：{self.total_errors}/{self.max_errors}"
+        )
+        return draw_table(headers, rows, row_colors=row_colors, title=title)
+
+    def draw_guess_result(self) -> bytes:
+        """
+        返回最近一次猜测的结果图片（PNG 字节）。
+        图片在 process_guess 内部渲染并缓存，此方法直接返回缓存值。
+        若尚无缓存（未进行过任何猜测），返回空白图片。
+        """
+        if self._last_guess_image is not None:
+            return self._last_guess_image
+        # 还没有任何猜测，返回提示图片
+        from .image_utils import draw_table
+        return draw_table(
+            ["曲名", "分类", "分区", "版本", "BPM", "Expert", "Master", "Re:M"],
+            [],
+            title="暂无猜测记录",
+        )
 
     def give_up_round(self) -> str:
         """放弃当前局，返回答案信息文本。"""
