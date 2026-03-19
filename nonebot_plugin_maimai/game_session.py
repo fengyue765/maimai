@@ -118,6 +118,7 @@ class SongInfo:
     version: str
     expert_ds: Optional[float]
     master_ds: Optional[float]
+    remaster_ds: Optional[float]  # 新增字段
     has_remaster: bool
     aliases: List[str] = field(default_factory=list)
 
@@ -164,6 +165,7 @@ def build_song_pool(csv_path: str) -> tuple[Dict[int, SongInfo], Dict[str, set[i
 
         expert_ds = _safe_float(expert_rows["Official DS"].iloc[0]) if not expert_rows.empty else None
         master_ds = _safe_float(master_rows["Official DS"].iloc[0]) if not master_rows.empty else None
+        remaster_ds = _safe_float(remaster_rows["Official DS"].iloc[0]) if not remaster_rows.empty else None
         has_remaster = not remaster_rows.empty
 
         aliases_raw = str(row.get("Aliases", ""))
@@ -178,6 +180,7 @@ def build_song_pool(csv_path: str) -> tuple[Dict[int, SongInfo], Dict[str, set[i
             version=version,
             expert_ds=expert_ds,
             master_ds=master_ds,
+            remaster_ds=remaster_ds,  # 新增
             has_remaster=has_remaster,
             aliases=aliases,
         )
@@ -229,10 +232,18 @@ class GuessSession:
         返回 song_id，或 None（未找到），或 -1（多个候选）。
         """
         uid = user_input.strip()
-        if uid.isdigit():
+
+        digitalias = ["39", "411892", "211985", "1919810"]
+        
+        # 如果是纯数字，进行完全匹配
+        if uid.isdigit() and uid not in digitalias:
             sid = int(uid)
             if sid in self.song_info_map:
                 return sid
+            # 数字但不在映射中，返回 None
+            return None
+        
+        # 非纯数字，使用别名匹配
         key = uid.lower()
         if key in self.alias_to_ids:
             matched = self.alias_to_ids[key]
@@ -240,6 +251,7 @@ class GuessSession:
                 return next(iter(matched))
             # 多个候选
             return -1
+        
         return None
 
     def _cmp(self, guess_val, target_val, kind: str = "category") -> str:
@@ -272,11 +284,13 @@ class GuessSession:
 
         is_correct = (song_id == target.song_id)
 
-        lines = [f"第 {self.current_round + 1} 局  第 {len(self.round_guesses) + 1} 次猜测\n"]
+        lines = [f"第 {self.current_round + 1} 局  第 {len(self.round_guesses) + 1} 次猜测"]
 
         # 表头
+        """
         lines.append("曲名         | 分类     | 分区     | 版本   | BPM    | Expert | Master | Re:M")
         lines.append("-" * 82)
+        """
 
         # 添加本次猜测
         self.round_guesses.append({
@@ -317,12 +331,14 @@ class GuessSession:
                 return f"{v}({sym})"
 
             t_s = gi.title[:12] + "…" if len(gi.title) > 12 else gi.title
+            """
             lines.append(
                 f"{t_s:<13} | {_fmt(gi.song_type, tc):<8} | {_fmt(gi.genre, gc):<8} | "
                 f"{_fmt(gi.version, vc):<6} | {_fmt(gi.bpm, bc):<6} | "
                 f"{_fmt(gi.expert_ds, ec, 'ds'):<6} | {_fmt(gi.master_ds, mc, 'ds'):<6} | "
                 f"{_fmt(gi.has_remaster, rc, 'bool')}"
             )
+            """
 
         if is_correct:
             # 在清除猜测历史前生成图片
@@ -492,20 +508,20 @@ def create_session(
 
     # 筛选符合模式的歌曲
     diff_type = mode["diff_type"]
-    available = [
-        sid
-        for sid, info in song_info_map.items()
-        if (
-            diff_type == "expert"
-            and info.expert_ds is not None
-            and mode["min_ds"] <= info.expert_ds <= mode["max_ds"]
-        )
-        or (
-            diff_type == "master"
-            and info.master_ds is not None
-            and mode["min_ds"] <= info.master_ds <= mode["max_ds"]
-        )
-    ]
+    available = []
+    
+    for sid, info in song_info_map.items():
+        if diff_type == "expert":
+            # Expert 模式只检查 expert_ds
+            if info.expert_ds is not None and mode["min_ds"] <= info.expert_ds <= mode["max_ds"]:
+                available.append(sid)
+        elif diff_type == "master":
+            # Master 模式检查 master_ds 和 remaster_ds
+            if info.master_ds is not None and mode["min_ds"] <= info.master_ds <= mode["max_ds"]:
+                available.append(sid)
+            elif info.remaster_ds is not None and mode["min_ds"] <= info.remaster_ds <= mode["max_ds"]:
+                available.append(sid)
+
 
     if len(available) < mode["rounds"]:
         return None, (

@@ -38,7 +38,7 @@ async def handle_cross_tier(
 
     range_a, range_b = parts[0], parts[1]
 
-    await matcher.send("🔍 查询中...")
+    # await matcher.send("🔍 查询中...")
 
     csv_path = get_plugin_config(Config).maimai_data_path
 

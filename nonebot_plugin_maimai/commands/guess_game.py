@@ -132,7 +132,8 @@ async def handle_guess_input(bot: Bot, event: Event, matcher: Matcher) -> None:
     guess_id = session.resolve_guess(user_input)
 
     if guess_id is None:
-        await matcher.finish(f"❌ 未找到「{user_input}」，请输入正确的 ID 或曲名/别名。")
+        # await matcher.finish(f"❌ 未找到「{user_input}」，请输入正确的 ID 或曲名/别名。")
+        pass
 
     if guess_id == -1:
         # 多个候选

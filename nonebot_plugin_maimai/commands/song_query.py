@@ -9,7 +9,8 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from ..config import Config
-from ..data_source import get_id_to_title, get_song_detail_image, search_songs
+from ..data_source import get_id_to_title, get_song_rows, search_songs, get_song_detail_image
+from ..draw import draw_song_card
 
 song_query_cmd = on_command(
     "查歌",
@@ -35,7 +36,9 @@ async def handle_song_query(
             "  /查歌 鸟折磨"
         )
 
-    csv_path = get_plugin_config(Config).maimai_data_path
+    cfg = get_plugin_config(Config)
+    csv_path = cfg.maimai_data_path
+    cover_dir = cfg.maimai_cover_dir
 
     def _query() -> tuple[list[str], dict[str, str]]:
         try:
@@ -63,11 +66,9 @@ async def handle_song_query(
             except Exception as exc:
                 raise RuntimeError(f"获取详情失败：{exc}") from exc
 
-        try:
-            img_bytes = await asyncio.get_event_loop().run_in_executor(None, _detail)
-            await matcher.finish(MessageSegment.image(img_bytes))
-        except Exception as exc:
-            await matcher.finish(f"❌ {exc}")
+        img_bytes = await asyncio.get_event_loop().run_in_executor(None, _detail)
+        await matcher.finish(MessageSegment.image(img_bytes))
+
     else:
         # 多个结果，显示列表
         result_ids = list(set(result_ids))[:15]

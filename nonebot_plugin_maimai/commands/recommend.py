@@ -38,7 +38,7 @@ async def handle_water(
             "  /水曲 13.5"
         )
 
-    await matcher.send("🔍 查询中...")
+    # await matcher.send("🔍 查询中...")
 
     cfg = get_plugin_config(Config)
     csv_path = cfg.maimai_data_path
@@ -83,7 +83,7 @@ async def handle_landmine(
             "  /诈称 13.5"
         )
 
-    await matcher.send("🔍 查询中...")
+    # await matcher.send("🔍 查询中...")
 
     cfg = get_plugin_config(Config)
     csv_path = cfg.maimai_data_path
